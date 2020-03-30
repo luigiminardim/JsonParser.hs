@@ -28,23 +28,56 @@ instance Alternative Parser where
 
   p1 <|> p2 = Parser(\ str -> run p1 str <|> run p2 str)
 
-string = (parserOfChar '"' *> strLiteral <* parserOfChar '"')
+ws = (:) <$> (foldr (<|>) empty . map parserOfChar) [' ', '\n', '\r', '\t'] <*> ws <|> pure []
+
+character = Parser(\ str -> case str of
+    a:str' -> Just(a, str')
+    _ -> Nothing
+  )
+
+string = (parserOfChar '"' *> characters <* parserOfChar '"')
   where
-    
-  strLiteral = Parser(\ str -> case str of
-      '\\':'"':str' -> do
-          (a', str'') <- run strLiteral str'
-          Just('"':a', str'')
-      '"':str' -> Just("", '"':str')
-      c:str' -> do
-        (a', str'') <- run strLiteral str'
-        Just(c:a', str'')
-      [] -> Nothing
-    )
+ 
+  characters = (:) <$> escapeCode <*> characters <|> endOfString <|> (:) <$> character <*> characters
+    where
 
-whiteSpaces = parserOfSpan (`elem` [' ', '\n', '\r', '\t'])
+    -- NOTE: don't support unicode.
+    escapeCode = (foldr (<|>) empty . map parserOfScape) ['\"', '\\', '/', '\b', '\f', '\n', '\r', '\t']
+      where
+      
+      parserOfScape esc = esc <$ sequenceA [parserOfChar '\\', parserOfChar esc]
 
-sepBy sep element = (:) <$> element <*> many(sep *> element) <|> pure[]
+    endOfString = Parser(\ str -> if str!!0 == '\"'
+        then Just([], str)
+        else Nothing
+      )
+
+sign = parserOfString "+" *> pure id
+    <|> parserOfString "-" *> pure negate
+    <|> pure id
+
+digit = parserOfChar '0' <|> onenine <|> empty
+
+onenine = (foldr (<|>) empty . map parserOfChar) ['1' .. '9']
+
+digits = (:) <$> digit <*> digits <|> (: []) <$> digit
+
+integer = read <$> (
+    (++) <$> sequenceA [parserOfChar '-', onenine] <*> digits
+    <|> sequenceA [parserOfChar '-', digit]
+    <|> (:) <$> onenine <*> digits
+    <|> (: []) <$> digit
+  )
+
+number = (\ i f e -> (fromIntegral i + f) * e) <$> integer <*> fraction <*> expoent
+  where
+
+  fraction = read . ("0." ++) <$> (parserOfChar '.' *> digits) 
+      <|> pure 0.0
+
+  expoent = (10 **) <$> (
+      (parserOfChar 'e' <|> parserOfChar 'E') *> sign <*> (read <$> digits)
+      <|> pure 0.0)
 
 parserOfChar c = Parser(\ str -> 
   if length str /= 0 && head str == c
@@ -55,3 +88,5 @@ parserOfChar c = Parser(\ str ->
 parserOfString = sequenceA . map parserOfChar
 
 parserOfSpan f = Parser(Just . span f)
+
+sepBy sep element = (:) <$> element <*> many(sep *> element) <|> pure []
