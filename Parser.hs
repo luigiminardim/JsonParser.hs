@@ -30,6 +30,9 @@ instance Alternative Parser where
 
 ws = (:) <$> (foldr (<|>) empty . map parserOfChar) [' ', '\n', '\r', '\t'] <*> ws <|> pure []
 
+boolean = Parser.parserOfString "true" *> pure(True)
+    <|> Parser.parserOfString "false" *> pure(False)
+
 character = Parser(\ str -> case str of
     a:str' -> Just(a, str')
     _ -> Nothing
@@ -51,6 +54,8 @@ string = (parserOfChar '"' *> characters <* parserOfChar '"')
         then Just([], str)
         else Nothing
       )
+
+literal = undefined
 
 sign = parserOfString "+" *> pure id
     <|> parserOfString "-" *> pure negate

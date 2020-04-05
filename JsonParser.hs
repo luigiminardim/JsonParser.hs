@@ -1,62 +1,54 @@
-module JsonParser where
+module JsonParser (
+  parse
+) where
 
-import Prelude hiding (Bool, String, null)
-import qualified Prelude (Bool, String, null)
+import Prelude hiding (null)
+import qualified Prelude (null)
 import Control.Applicative
 import Data.Char
 
-import Parser hiding (string)
-import qualified Parser (string)
+import Json
+import Parser hiding (string, number, boolean)
+import qualified Parser (string, number, boolean)
 
-data JsonValue
-  = Null
-  | Bool Prelude.Bool
-  | Number Prelude.Int
-  | String Prelude.String
-  | Array [JsonValue]
-  | Object [(Prelude.String, JsonValue)]
-  deriving (Show, Eq)
+instance Read Json.Value where
+  readsPrec _ str = case run value str of
+    Nothing -> []
+    Just a -> [a]
 
-jsonValue = null <|> bool <|> number <|> string <|> array <|> object
+parse str = do 
+  result <- run value str
+  return(fst result)
 
-null = (\ _ -> Null) <$> parserOfString "null"
+value = ws *> (null <|> boolean <|> number <|> string <|> array <|> object)
 
-bool = convBoolToJsonValue<$> (parserOfString "true" <|> parserOfString "false")
-  where
+null = Parser.parserOfString "null" *> pure Null
 
-  convBoolToJsonValue str
-    | str == "true"   = Bool True 
-    | str == "false"  = Bool False
+boolean = Boolean <$> Parser.boolean
 
-number = (Number . read) <$> Parser(\ str -> do
-      (a, str') <- run (parserOfSpan isDigit) str
-      if length a == 0
-        then Nothing
-        else Just(a, str')
-    )
+number = Number <$> Parser.number
 
 string = String <$> Parser.string 
 
-array = parserOfChar '[' *> whiteSpaces
+array = parserOfChar '[' *> ws
     *> (Array <$> elements)
-    <* whiteSpaces <* parserOfChar ']'
+    <* ws <* parserOfChar ']'
   where
 
-  elements = sepBy (whiteSpaces *> sep <* whiteSpaces) object
+  elements = sepBy (ws *> sep <* ws) value
     where
     
     sep = parserOfChar ','
 
-object = Object <$> (
-      parserOfChar '{' *> whiteSpaces
-      *> attributes 
-      <* whiteSpaces <* parserOfChar '}'
-    )
+object = parserOfChar '{' *> ws
+      *> (Object <$> members)
+      <* ws <* parserOfChar '}'
   where
   
-  attributes = sepBy (whiteSpaces *> sep <* whiteSpaces) atribute
+  members = sepBy (ws *> sep <* ws) member
     where
+
+      sep = parserOfChar ','
+
+      member = (,) <$> (Parser.string <* ws <* parserOfChar ':') <*> (ws *> value)
     
-    sep = parserOfChar ','
-    atribute = (,) <$> (Parser.string <* whiteSpaces <* parserOfChar ':' <* whiteSpaces) <*> jsonValue
-  
